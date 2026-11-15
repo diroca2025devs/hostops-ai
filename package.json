@@ -1,0 +1,25 @@
+{
+  "name": "hostops-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HostOps AI — plataforma de operação de imóveis de hospedagem (MVP)",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22.9" },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "dev:api": "pnpm --filter @hostops/api dev",
+    "dev:worker": "pnpm --filter @hostops/worker dev",
+    "dev:web": "pnpm --filter @hostops/web dev",
+    "build": "pnpm --filter @hostops/web build",
+    "db:generate": "pnpm --filter @hostops/database generate",
+    "db:migrate": "pnpm --filter @hostops/database migrate:deploy",
+    "db:migrate:dev": "pnpm --filter @hostops/database migrate:dev",
+    "db:seed": "pnpm --filter @hostops/database seed",
+    "bootstrap": "pnpm db:generate && pnpm db:migrate && pnpm db:seed",
+    "db:create-owner": "pnpm --filter @hostops/database create-owner",
+    "db:reset-demo": "pnpm --filter @hostops/database seed -- --reset",
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "typecheck": "pnpm -r typecheck",
+    "package": "bash scripts/package.sh"
+  }
+}

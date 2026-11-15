@@ -1,0 +1,6 @@
+# Proxy reverso com HTTPS automático (Let's Encrypt) para o painel e a API.
+# DOMAIN vem do .env. O DNS do domínio precisa apontar para o IP da VM antes da primeira subida.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}

@@ -1,0 +1,44 @@
+# Sobreposição de produção. Use junto com o arquivo base:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Diferenças em relação ao ambiente local:
+#  - HTTPS automático com Caddy nas portas 80/443 (exige DOMAIN no .env e DNS apontado);
+#  - o painel deixa de ser publicado direto na porta 3000;
+#  - a API, o MariaDB e o Redis não são publicados no host;
+#  - o serviço "migrate" só aplica migrations (sem dados de demonstração).
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: "${DOMAIN:?defina DOMAIN no .env}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+
+  web:
+    ports: !reset []
+
+  api:
+    ports: !reset []
+
+  mariadb:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  migrate:
+    command: ["./node_modules/.bin/prisma", "migrate", "deploy"]
+
+volumes:
+  caddy-data:
+  caddy-config:

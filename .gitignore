@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+.next/
+out/
+coverage/
+*.log
+*.tsbuildinfo
+database/src/generated/
+storage/
+.DS_Store
+hostops-ai.zip
+dump.rdb

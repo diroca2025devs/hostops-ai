@@ -1,0 +1,29 @@
+{
+  "name": "@hostops/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/fakes.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hostops/database": "workspace:*",
+    "@hostops/shared": "workspace:*",
+    "bullmq": "^6.7.6",
+    "ioredis": "^6.0.0",
+    "luxon": "^3.7.2",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^22.19.0",
+    "typescript": "~5.9.3",
+    "vitest": "^5.1.0"
+  }
+}

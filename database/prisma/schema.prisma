@@ -1,0 +1,696 @@
+// HostOps AI — schema oficial (MariaDB é a fonte da verdade dos dados).
+// Toda entidade operacional carrega organizationId: o isolamento multi-tenant
+// é aplicado no backend filtrando SEMPRE por esse campo.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum ReservationChannel {
+  AIRBNB
+  BOOKING
+  DIRECT
+  OTHER
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  BLOCKED
+}
+
+enum CleaningStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum MaintenanceStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+}
+
+enum TicketSource {
+  STAFF
+  GUEST
+  AI
+}
+
+enum ConversationStatus {
+  BOT
+  HUMAN
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageSender {
+  GUEST
+  AI
+  HUMAN
+  SYSTEM
+}
+
+enum MessageStatus {
+  RECEIVED
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum GuestRequestType {
+  INFORMATION
+  EARLY_CHECKIN
+  LATE_CHECKOUT
+  RESERVATION_CHANGE
+  DISCOUNT
+  FINANCIAL
+  MAINTENANCE
+  OTHER
+}
+
+enum GuestRequestStatus {
+  OPEN
+  APPROVED
+  REJECTED
+  DONE
+}
+
+enum NotificationChannel {
+  IN_APP
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum IntegrationProvider {
+  GOOGLE_CALENDAR
+  WHATSAPP
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+enum CalendarEntityType {
+  RESERVATION
+  CHECKIN
+  CHECKOUT
+  CLEANING
+}
+
+enum CalendarSyncStatus {
+  SYNCED
+  FAILED
+  DELETED
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+  AI
+}
+
+// ----------------------------------------------------------------------------
+// Identidade, organizações e RBAC
+// ----------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  timezone  String   @default("America/Sao_Paulo")
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  members            OrganizationUser[]
+  properties         Property[]
+  guests             Guest[]
+  reservations       Reservation[]
+  icalFeeds          IcalFeed[]
+  checklistTemplates ChecklistTemplate[]
+  cleaningTasks      CleaningTask[]
+  cleaningPhotos     CleaningPhoto[]
+  maintenanceTickets MaintenanceTicket[]
+  knowledgeArticles  KnowledgeArticle[]
+  conversations      Conversation[]
+  messages           Message[]
+  guestRequests      GuestRequest[]
+  aiInteractions     AiInteraction[]
+  notifications      Notification[]
+  integrations       Integration[]
+  calendarSyncEvents CalendarSyncEvent[]
+  auditLogs          AuditLog[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  phone        String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime? @db.DateTime(3)
+  createdAt    DateTime  @default(now()) @db.DateTime(3)
+  updatedAt    DateTime  @updatedAt @db.DateTime(3)
+
+  memberships        OrganizationUser[]
+  cleaningTasks      CleaningTask[]      @relation("CleaningTaskCleaner")
+  maintenanceTickets MaintenanceTicket[] @relation("MaintenanceAssignee")
+  notifications      Notification[]
+  defaultForProperty Property[]          @relation("PropertyDefaultCleaner")
+}
+
+model Role {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  name        String
+  description String?
+
+  permissions RolePermission[]
+  members     OrganizationUser[]
+}
+
+model Permission {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  description String?
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model OrganizationUser {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  roleId         String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.DateTime(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id])
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+// ----------------------------------------------------------------------------
+// Imóveis, hóspedes e reservas
+// ----------------------------------------------------------------------------
+
+model Property {
+  id                      String   @id @default(cuid())
+  organizationId          String
+  name                    String
+  code                    String   @db.VarChar(20)
+  addressLine             String
+  city                    String
+  state                   String
+  /// Quando nulo, usa o fuso da organização.
+  timezone                String?
+  checkInTime             String   @default("15:00") @db.VarChar(5)
+  checkOutTime            String   @default("11:00") @db.VarChar(5)
+  cleaningDurationMinutes Int      @default(180)
+  maxGuests               Int      @default(2)
+  wifiName                String?
+  /// Cifrado com AES-256-GCM (nunca em texto puro).
+  wifiPasswordEnc         String?  @db.Text
+  /// Cifrado com AES-256-GCM (nunca em texto puro).
+  accessCodeEnc           String?  @db.Text
+  checkInInstructions     String?  @db.Text
+  houseRules              String?  @db.Text
+  defaultCleanerId        String?
+  isActive                Boolean  @default(true)
+  createdAt               DateTime @default(now()) @db.DateTime(3)
+  updatedAt               DateTime @updatedAt @db.DateTime(3)
+
+  organization       Organization        @relation(fields: [organizationId], references: [id])
+  defaultCleaner     User?               @relation("PropertyDefaultCleaner", fields: [defaultCleanerId], references: [id])
+  reservations       Reservation[]
+  icalFeeds          IcalFeed[]
+  cleaningTasks      CleaningTask[]
+  maintenanceTickets MaintenanceTicket[]
+  knowledgeArticles  KnowledgeArticle[]
+  checklistTemplates ChecklistTemplate[]
+  conversations      Conversation[]
+
+  @@unique([organizationId, code])
+  @@index([defaultCleanerId])
+}
+
+model Guest {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  /// E.164 (ex.: +5531900000001)
+  phone          String?  @db.VarChar(20)
+  email          String?
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now()) @db.DateTime(3)
+  updatedAt      DateTime @updatedAt @db.DateTime(3)
+
+  organization  Organization   @relation(fields: [organizationId], references: [id])
+  reservations  Reservation[]
+  conversations Conversation[]
+
+  @@unique([organizationId, phone])
+}
+
+model IcalFeed {
+  id             String             @id @default(cuid())
+  organizationId String
+  propertyId     String
+  channel        ReservationChannel
+  name           String
+  /// URLs iCal carregam token secreto: armazenadas cifradas.
+  urlEnc         String             @db.Text
+  isActive       Boolean            @default(true)
+  lastSyncAt     DateTime?          @db.DateTime(3)
+  lastStatus     String?            @db.VarChar(20)
+  lastError      String?            @db.Text
+  createdAt      DateTime           @default(now()) @db.DateTime(3)
+  updatedAt      DateTime           @updatedAt @db.DateTime(3)
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  property     Property      @relation(fields: [propertyId], references: [id])
+  reservations Reservation[]
+
+  @@index([organizationId])
+  @@index([propertyId])
+}
+
+model Reservation {
+  id             String             @id @default(cuid())
+  organizationId String
+  propertyId     String
+  guestId        String?
+  icalFeedId     String?
+  channel        ReservationChannel
+  /// Código da reserva no canal de origem (UID do iCal). Garante importação idempotente.
+  externalId     String?
+  /// Instantes em UTC. A estadia ocupa [checkIn, checkOut).
+  checkIn        DateTime           @db.DateTime(3)
+  checkOut       DateTime           @db.DateTime(3)
+  guestCount     Int                @default(1)
+  status         ReservationStatus  @default(CONFIRMED)
+  summary        String?
+  notes          String?            @db.Text
+  createdAt      DateTime           @default(now()) @db.DateTime(3)
+  updatedAt      DateTime           @updatedAt @db.DateTime(3)
+
+  organization  Organization        @relation(fields: [organizationId], references: [id])
+  property      Property            @relation(fields: [propertyId], references: [id])
+  guest         Guest?              @relation(fields: [guestId], references: [id])
+  icalFeed      IcalFeed?           @relation(fields: [icalFeedId], references: [id])
+  cleaningTask  CleaningTask?
+  conversations Conversation[]
+  tickets       MaintenanceTicket[]
+  guestRequests GuestRequest[]
+
+  @@unique([propertyId, channel, externalId])
+  @@index([organizationId, checkIn])
+  @@index([propertyId, checkIn, checkOut])
+  @@index([guestId])
+  @@index([icalFeedId])
+}
+
+// ----------------------------------------------------------------------------
+// Limpeza
+// ----------------------------------------------------------------------------
+
+model ChecklistTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Nulo = modelo da organização; preenchido = modelo específico do imóvel.
+  propertyId     String?
+  name           String
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now()) @db.DateTime(3)
+
+  organization Organization            @relation(fields: [organizationId], references: [id])
+  property     Property?               @relation(fields: [propertyId], references: [id])
+  items        ChecklistTemplateItem[]
+
+  @@index([organizationId])
+  @@index([propertyId])
+}
+
+model ChecklistTemplateItem {
+  id            String  @id @default(cuid())
+  templateId    String
+  label         String
+  position      Int     @default(0)
+  requiresPhoto Boolean @default(false)
+
+  template ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+}
+
+model CleaningTask {
+  id                String         @id @default(cuid())
+  organizationId    String
+  propertyId        String
+  /// Reserva cujo check-out originou a tarefa (uma tarefa por reserva).
+  reservationId     String         @unique
+  nextReservationId String?
+  cleanerId         String?
+  windowStart       DateTime       @db.DateTime(3)
+  windowEnd         DateTime       @db.DateTime(3)
+  estimatedMinutes  Int
+  status            CleaningStatus @default(PENDING)
+  hasConflict       Boolean        @default(false)
+  conflictReason    String?        @db.Text
+  startedAt         DateTime?      @db.DateTime(3)
+  /// Preenchido somente por confirmação explícita da diarista ou de usuário autorizado.
+  completedAt       DateTime?      @db.DateTime(3)
+  completedById     String?
+  notes             String?        @db.Text
+  createdAt         DateTime       @default(now()) @db.DateTime(3)
+  updatedAt         DateTime       @updatedAt @db.DateTime(3)
+
+  organization Organization            @relation(fields: [organizationId], references: [id])
+  property     Property                @relation(fields: [propertyId], references: [id])
+  reservation  Reservation             @relation(fields: [reservationId], references: [id])
+  cleaner      User?                   @relation("CleaningTaskCleaner", fields: [cleanerId], references: [id])
+  items        CleaningChecklistItem[]
+  photos       CleaningPhoto[]
+
+  @@index([organizationId, status])
+  @@index([propertyId])
+  @@index([cleanerId, windowStart])
+}
+
+model CleaningChecklistItem {
+  id            String    @id @default(cuid())
+  taskId        String
+  label         String
+  position      Int       @default(0)
+  requiresPhoto Boolean   @default(false)
+  checkedAt     DateTime? @db.DateTime(3)
+  checkedById   String?
+
+  task   CleaningTask    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  photos CleaningPhoto[]
+
+  @@index([taskId])
+}
+
+model CleaningPhoto {
+  id              String   @id @default(cuid())
+  organizationId  String
+  taskId          String
+  checklistItemId String?
+  storageKey      String
+  mimeType        String   @db.VarChar(40)
+  sizeBytes       Int
+  uploadedById    String
+  createdAt       DateTime @default(now()) @db.DateTime(3)
+
+  organization  Organization           @relation(fields: [organizationId], references: [id])
+  task          CleaningTask           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  checklistItem CleaningChecklistItem? @relation(fields: [checklistItemId], references: [id])
+
+  @@index([organizationId])
+  @@index([taskId])
+  @@index([checklistItemId])
+}
+
+// ----------------------------------------------------------------------------
+// Manutenção e base de conhecimento
+// ----------------------------------------------------------------------------
+
+model MaintenanceTicket {
+  id             String              @id @default(cuid())
+  organizationId String
+  propertyId     String
+  reservationId  String?
+  title          String
+  description    String              @db.Text
+  priority       MaintenancePriority @default(MEDIUM)
+  status         MaintenanceStatus   @default(OPEN)
+  source         TicketSource        @default(STAFF)
+  reportedById   String?
+  assignedToId   String?
+  resolvedAt     DateTime?           @db.DateTime(3)
+  createdAt      DateTime            @default(now()) @db.DateTime(3)
+  updatedAt      DateTime            @updatedAt @db.DateTime(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  property     Property     @relation(fields: [propertyId], references: [id])
+  reservation  Reservation? @relation(fields: [reservationId], references: [id])
+  assignedTo   User?        @relation("MaintenanceAssignee", fields: [assignedToId], references: [id])
+
+  @@index([organizationId, status])
+  @@index([propertyId])
+  @@index([reservationId])
+  @@index([assignedToId])
+}
+
+model KnowledgeArticle {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Nulo = vale para todos os imóveis da organização.
+  propertyId     String?
+  title          String
+  category       String?  @db.VarChar(60)
+  content        String   @db.Text
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.DateTime(3)
+  updatedAt      DateTime @updatedAt @db.DateTime(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  property     Property?    @relation(fields: [propertyId], references: [id])
+
+  @@index([organizationId])
+  @@index([propertyId])
+}
+
+// ----------------------------------------------------------------------------
+// Atendimento (WhatsApp + IA)
+// ----------------------------------------------------------------------------
+
+model Conversation {
+  id             String             @id @default(cuid())
+  organizationId String
+  guestId        String?
+  propertyId     String?
+  reservationId  String?
+  channel        String             @default("WHATSAPP") @db.VarChar(20)
+  contactPhone   String             @db.VarChar(20)
+  contactName    String?
+  status         ConversationStatus @default(BOT)
+  handoffReason  String?            @db.Text
+  lastMessageAt  DateTime?          @db.DateTime(3)
+  createdAt      DateTime           @default(now()) @db.DateTime(3)
+  updatedAt      DateTime           @updatedAt @db.DateTime(3)
+
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  guest          Guest?          @relation(fields: [guestId], references: [id])
+  property       Property?       @relation(fields: [propertyId], references: [id])
+  reservation    Reservation?    @relation(fields: [reservationId], references: [id])
+  messages       Message[]
+  guestRequests  GuestRequest[]
+  aiInteractions AiInteraction[]
+
+  @@unique([organizationId, channel, contactPhone])
+  @@index([guestId])
+  @@index([propertyId])
+  @@index([reservationId])
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  organizationId String
+  conversationId String
+  direction      MessageDirection
+  sender         MessageSender
+  body           String           @db.Text
+  /// ID da mensagem no provedor (wamid). Único: impede processar o mesmo webhook duas vezes.
+  externalId     String?          @unique
+  status         MessageStatus
+  sentById       String?
+  errorMessage   String?          @db.Text
+  createdAt      DateTime         @default(now()) @db.DateTime(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([conversationId, createdAt])
+}
+
+model GuestRequest {
+  id                    String             @id @default(cuid())
+  organizationId        String
+  conversationId        String?
+  reservationId         String?
+  propertyId            String?
+  guestId               String?
+  type                  GuestRequestType
+  description           String             @db.Text
+  status                GuestRequestStatus @default(OPEN)
+  /// Alterações de reserva, descontos, antecipações e decisões financeiras exigem humano.
+  requiresHumanApproval Boolean            @default(false)
+  resolutionNote        String?            @db.Text
+  resolvedById          String?
+  resolvedAt            DateTime?          @db.DateTime(3)
+  createdAt             DateTime           @default(now()) @db.DateTime(3)
+  updatedAt             DateTime           @updatedAt @db.DateTime(3)
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  reservation  Reservation?  @relation(fields: [reservationId], references: [id])
+
+  @@index([organizationId, status])
+  @@index([conversationId])
+  @@index([reservationId])
+}
+
+model AiInteraction {
+  id               String   @id @default(cuid())
+  organizationId   String
+  conversationId   String
+  /// Mensagem do hóspede que disparou a execução. Único: no máximo uma resposta por mensagem.
+  triggerMessageId String   @unique
+  model            String
+  /// Ferramentas chamadas (argumentos e resultados com segredos mascarados).
+  toolCalls        Json?
+  outcome          String   @db.VarChar(30)
+  errorMessage     String?  @db.Text
+  latencyMs        Int?
+  createdAt        DateTime @default(now()) @db.DateTime(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([conversationId])
+}
+
+// ----------------------------------------------------------------------------
+// Notificações, integrações, agenda e auditoria
+// ----------------------------------------------------------------------------
+
+model Notification {
+  id             String              @id @default(cuid())
+  organizationId String
+  userId         String
+  channel        NotificationChannel @default(IN_APP)
+  type           String              @db.VarChar(60)
+  title          String
+  body           String              @db.Text
+  status         NotificationStatus  @default(SENT)
+  /// Evita repetir o mesmo aviso (ex.: mesmo conflito a cada varredura).
+  dedupeKey      String?
+  readAt         DateTime?           @db.DateTime(3)
+  errorMessage   String?             @db.Text
+  createdAt      DateTime            @default(now()) @db.DateTime(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel, dedupeKey])
+  @@index([organizationId])
+  @@index([userId, readAt])
+}
+
+model Integration {
+  id                String              @id @default(cuid())
+  organizationId    String
+  provider          IntegrationProvider
+  status            IntegrationStatus   @default(DISCONNECTED)
+  /// Identificador da conta no provedor (ex.: phone_number_id do WhatsApp).
+  externalAccountId String?
+  /// Tokens cifrados com AES-256-GCM.
+  accessTokenEnc    String?             @db.Text
+  refreshTokenEnc   String?             @db.Text
+  tokenExpiresAt    DateTime?           @db.DateTime(3)
+  config            Json?
+  lastError         String?             @db.Text
+  createdAt         DateTime            @default(now()) @db.DateTime(3)
+  updatedAt         DateTime            @updatedAt @db.DateTime(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, provider])
+  @@index([provider, externalAccountId])
+}
+
+model CalendarSyncEvent {
+  id              String             @id @default(cuid())
+  organizationId  String
+  entityType      CalendarEntityType
+  entityId        String
+  calendarId      String
+  externalEventId String
+  contentHash     String             @db.VarChar(64)
+  status          CalendarSyncStatus
+  lastError       String?            @db.Text
+  syncedAt        DateTime?          @db.DateTime(3)
+  createdAt       DateTime           @default(now()) @db.DateTime(3)
+  updatedAt       DateTime           @updatedAt @db.DateTime(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, entityType, entityId])
+}
+
+model AuditLog {
+  id             String         @id @default(cuid())
+  organizationId String
+  actorType      AuditActorType
+  actorUserId    String?
+  action         String         @db.VarChar(80)
+  entityType     String         @db.VarChar(60)
+  entityId       String?
+  metadata       Json?
+  ip             String?        @db.VarChar(64)
+  createdAt      DateTime       @default(now()) @db.DateTime(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+}

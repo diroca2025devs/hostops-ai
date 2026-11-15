@@ -1,0 +1,128 @@
+# HostOps AI — ambiente local completo.
+#
+#   cp .env.example .env        (e troque os segredos)
+#   docker compose up -d --build
+#
+# Somente infraestrutura (para rodar os apps com "pnpm dev" na máquina):
+#   docker compose up -d mariadb redis
+name: hostops-ai
+
+x-app-env: &app-env
+  NODE_ENV: ${NODE_ENV:-production}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: mysql://${MARIADB_USER:-hostops}:${MARIADB_PASSWORD:?defina MARIADB_PASSWORD no .env}@mariadb:3306/${MARIADB_DATABASE:-hostops}
+  REDIS_URL: redis://redis:6379
+  API_HOST: 0.0.0.0
+  API_PORT: 3001
+  WEB_URL: ${WEB_URL:-http://localhost:3000}
+  JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+  JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY no .env}
+  STORAGE_DIR: /app/storage
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.7-flash}
+  AI_ACCESS_RELEASE_HOURS: ${AI_ACCESS_RELEASE_HOURS:-48}
+  WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+  WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+  WHATSAPP_GRAPH_VERSION: ${WHATSAPP_GRAPH_VERSION:-v26.0}
+  WHATSAPP_TEMPLATE_CLEANING_ASSIGNED: ${WHATSAPP_TEMPLATE_CLEANING_ASSIGNED:-}
+  WHATSAPP_TEMPLATE_LANGUAGE: ${WHATSAPP_TEMPLATE_LANGUAGE:-pt_BR}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/api/v1/integrations/google/callback}
+  GOOGLE_OAUTH_SCOPES: ${GOOGLE_OAUTH_SCOPES:-https://www.googleapis.com/auth/calendar}
+  SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-HostOps@Demo2026}
+
+services:
+  mariadb:
+    image: mariadb:10.11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?defina MARIADB_ROOT_PASSWORD no .env}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-hostops}
+      MARIADB_USER: ${MARIADB_USER:-hostops}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?defina MARIADB_PASSWORD no .env}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./database/docker/init.sql:/docker-entrypoint-initdb.d/10-hostops-test.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Aplica as migrations e grava o seed de demonstração (idempotente). Roda uma vez e encerra.
+  migrate:
+    build: { context: ., target: migrate }
+    environment: *app-env
+    depends_on:
+      mariadb: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    build: { context: ., target: api }
+    restart: unless-stopped
+    environment: *app-env
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      mariadb: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  worker:
+    build: { context: ., target: worker }
+    restart: unless-stopped
+    environment: *app-env
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      mariadb: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    build:
+      context: .
+      target: web
+      args:
+        API_INTERNAL_URL: http://api:3001
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  mariadb-data:
+  redis-data:
+  storage:
