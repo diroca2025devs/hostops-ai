@@ -28,30 +28,13 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: var(--ho-space-2);
-  padding: 0 var(--ho-space-2);
-  font-family: var(--ho-font-display);
-  font-weight: 700;
-  font-size: 16px;
+  padding: var(--ho-space-1) var(--ho-space-2);
 }
-.brandMark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--ho-radius);
-  color: #fff;
-  background: linear-gradient(135deg, var(--ho-brand), #8b7cf6);
-}
-.brandTag {
-  font-family: var(--ho-font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  padding: 0 5px;
-  border-radius: 4px;
-  color: var(--ho-brand);
-  background: var(--ho-brand-soft);
+.brandLogo {
+  width: 100%;
+  max-width: 196px;
+  height: auto;
+  display: block;
 }
 .nav {
   flex: 1;

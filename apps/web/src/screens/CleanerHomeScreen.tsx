@@ -22,6 +22,7 @@ export function CleanerHomeScreen({ onOpenTask }: { onOpenTask: (id: string) => 
   return (
     <div className={styles.cleanerPage}>
       <header className={styles.cleanerHeader}>
+        <img src="/logo-mark.png" alt="HostOps AI" style={{ width: 38, height: 38, objectFit: 'contain' }} />
         <Avatar name={session?.user.name ?? '?'} size={42} />
         <div className={styles.itemMain}>
           <h1>Olá, {session?.user.name.split(' ')[0]}</h1>

@@ -157,21 +157,14 @@
 .loginBrand {
   display: flex;
   align-items: center;
-  gap: var(--ho-space-2);
-  font-family: var(--ho-font-display);
-  font-size: 20px;
-  font-weight: 800;
-  margin-bottom: var(--ho-space-2);
-}
-.loginMark {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--ho-radius);
-  color: #fff;
-  background: linear-gradient(135deg, var(--ho-brand), #8b7cf6);
+  margin-bottom: var(--ho-space-3);
+}
+.loginLogo {
+  width: 100%;
+  max-width: 280px;
+  height: auto;
+  display: block;
 }
 
 /* Calendário (linha do tempo por imóvel) */

@@ -1,7 +1,7 @@
 'use client';
 
 import '@/lib/fontawesome';
-import { faArrowRightFromBracket, faBars, faBell, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
+import { faArrowRightFromBracket, faBars, faBell } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { ROLE_LABELS } from '@hostops/shared';
 import Link from 'next/link';
@@ -35,10 +35,7 @@ export function AppShell({ pathname, children }: { pathname: string; children: R
       {menuOpen && <div className={styles.backdrop} onClick={() => setMenuOpen(false)} />}
       <aside className={`${styles.sidebar} ${menuOpen ? styles.sidebarOpen : ''}`}>
         <div className={styles.brand}>
-          <span className={styles.brandMark}>
-            <FontAwesomeIcon icon={faLayerGroup} />
-          </span>
-          HostOps <span className={styles.brandTag}>AI</span>
+          <img src="/logo.png" alt="HostOps AI" className={styles.brandLogo} />
         </div>
         <nav className={styles.nav} aria-label="Menu principal">
           {items.map((item) => {

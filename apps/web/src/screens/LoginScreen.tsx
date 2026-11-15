@@ -1,8 +1,8 @@
 'use client';
 
-import { faLayerGroup, faRightToBracket } from '@fortawesome/free-solid-svg-icons';
+import { faRightToBracket } from '@fortawesome/free-solid-svg-icons';
 import { useState, type FormEvent } from 'react';
-import { Alert, Button, Card, Field, Icon, Input } from '@/components/ui';
+import { Alert, Button, Card, Field, Input } from '@/components/ui';
 import { useAuth, type Session } from '@/lib/auth';
 import { useSubmit } from '@/lib/useSubmit';
 import styles from './screens.module.css';
@@ -23,10 +23,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (session: Session) => vo
     <div className={styles.loginPage}>
       <Card className={styles.loginCard}>
         <div className={styles.loginBrand}>
-          <span className={styles.loginMark}>
-            <Icon icon={faLayerGroup} />
-          </span>
-          HostOps AI
+          <img src="/logo.png" alt="HostOps AI — Gerencie. Automatize. Encante." className={styles.loginLogo} />
         </div>
         <p className={styles.sub} style={{ marginBottom: 20 }}>
           Reservas, limpeza e atendimento dos seus imóveis em um só lugar.
